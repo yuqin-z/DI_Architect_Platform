@@ -51,6 +51,27 @@ export interface DesignCues {
   cue_target_where?: string;
 }
 
+export interface DPCue {
+  cue_medium?: string[];
+  cue_medium_other?: string;
+  cue_vertical?: boolean;
+  cue_importance?: number; // 1-3
+  cue_confidence?: number; // 1-7
+  cue_explain?: string;
+}
+
+export interface DPAnnotation {
+  dp_choice?: string; // ID of the target connecting node
+  dp_confidence?: number; // 1-7
+  dp_behavior?: string; // WD, HP, SS, SA, AL, EX, Other
+  dp_behavior_other?: string;
+  dp_rationale?: string[];
+  dp_rationale_other?: string;
+  dp_affect?: string; // Grid value
+  dp_attention_aoi?: AttentionZone[]; // Max 3
+  cues?: DPCue[]; // Max 3
+}
+
 export type NodeShape = 'circle' | 'star' | 'square' | 'polygon' | 'diamond';
 
 export interface Node {
@@ -63,6 +84,7 @@ export interface Node {
   design_importance: 'no' | 'neutral' | 'yes';
   space_annotation: SpaceAnnotation;
   behavior_expectation: BehaviorExpectation;
+  dp_annotation?: DPAnnotation;
 }
 
 export interface CorridorSegment {
@@ -88,6 +110,7 @@ export interface Corridor {
   design_importance: 'no' | 'neutral' | 'yes';
   space_annotation: SpaceAnnotation;
   behavior_expectation: BehaviorExpectation;
+  notes?: string;
 }
 
 export interface Floor {
@@ -142,7 +165,7 @@ export interface AnnotationData {
   };
 }
 
-export type NodeType = 
+export type NodeType =
   | 'Entrance/Exit (E)'
   | 'Decision Point (DP)'
   | 'Decision Zone (DZ)'

@@ -14,7 +14,7 @@ const Canvas: React.FC = () => {
   const [hoveredElement, setHoveredElement] = useState<{ id: string; type: 'node' | 'corridor' | 'vertex'; index?: number } | null>(null);
   const [selectedCorridor, setSelectedCorridor] = useState<string | null>(null);
   const [backgroundImg, setBackgroundImg] = useState<HTMLImageElement | null>(null);
-  
+
   const {
     selectedTool,
     selectedNodeType,
@@ -26,7 +26,6 @@ const Canvas: React.FC = () => {
     moveNode,
     openNodeModal,
     openCorridorModal,
-    openEdgeModal,
     generateId,
     getElementByPosition,
     getNodeCentroid,
@@ -36,17 +35,19 @@ const Canvas: React.FC = () => {
     finishDrawing,
     cancelDrawing,
     getNodeTypeConfig,
+    updateNode,
+    updateCorridor,
     updateCorridorVertex,
     getVisibleNodes,
     getVisibleCorridors,
     getCurrentFloor,
     getCorridorSegmentsForFloor
   } = useAnnotationStore();
-  
+
   // Get visible elements for current floor
   const nodes = getVisibleNodes();
   const corridors = getVisibleCorridors();
-  
+
   // Load background image
   useEffect(() => {
     if (canvasState.backgroundImage) {
@@ -59,7 +60,7 @@ const Canvas: React.FC = () => {
       setBackgroundImg(null);
     }
   }, [canvasState.backgroundImage]);
-  
+
   // Transform screen coordinates to canvas coordinates
   const screenToCanvas = useCallback((screenPos: Position): Position => {
     const pcsPos = screenToPCS(screenPos, canvasState.pan, canvasState.scale);
@@ -68,34 +69,34 @@ const Canvas: React.FC = () => {
       z: canvasState.currentFloorIndex
     };
   }, [canvasState]);
-  
+
   // Transform canvas coordinates to screen coordinates
   const canvasToScreen = useCallback((canvasPos: Position): Position => {
     return pcsToScreen(canvasPos, canvasState.pan, canvasState.scale);
   }, [canvasState]);
-  
+
   // Get mouse position relative to canvas
   const getMousePos = useCallback((event: React.MouseEvent): Position => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
-    
+
     const rect = canvas.getBoundingClientRect();
     return {
       x: event.clientX - rect.left,
       y: event.clientY - rect.top
     };
   }, []);
-  
+
   // Check if position is near a corridor vertex
   const isNearCorridorVertex = useCallback((position: Position, tolerance = 12): { corridorId: string; vertexIndex: number } | null => {
     for (const corridor of corridors) {
       for (let i = 0; i < corridor.path.length; i++) {
         const vertex = corridor.path[i];
         const distance = Math.sqrt(
-          Math.pow(vertex.x - position.x, 2) + 
+          Math.pow(vertex.x - position.x, 2) +
           Math.pow(vertex.y - position.y, 2)
         );
-        
+
         if (distance < tolerance) {
           return { corridorId: corridor.id, vertexIndex: i };
         }
@@ -103,27 +104,27 @@ const Canvas: React.FC = () => {
     }
     return null;
   }, [corridors]);
-  
+
   // Check if position is near a corridor segment
   const isNearCorridorSegment = useCallback((position: Position, tolerance = 15): string | null => {
     for (const corridor of corridors) {
       const segments = getCorridorSegmentsForFloor(corridor.id, canvasState.currentFloorIndex);
-      
+
       for (const segment of segments) {
         // Calculate distance from point to line segment
         const A = position.x - segment.start.x;
         const B = position.y - segment.start.y;
         const C = segment.end.x - segment.start.x;
         const D = segment.end.y - segment.start.y;
-        
+
         const dot = A * C + B * D;
         const lenSq = C * C + D * D;
-        
+
         if (lenSq === 0) continue;
-        
+
         const param = dot / lenSq;
         let xx, yy;
-        
+
         if (param < 0) {
           xx = segment.start.x;
           yy = segment.start.y;
@@ -134,11 +135,11 @@ const Canvas: React.FC = () => {
           xx = segment.start.x + param * C;
           yy = segment.start.y + param * D;
         }
-        
+
         const dx = position.x - xx;
         const dy = position.y - yy;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        
+
         if (distance < tolerance) {
           return corridor.id;
         }
@@ -146,43 +147,46 @@ const Canvas: React.FC = () => {
     }
     return null;
   }, [corridors, canvasState.currentFloorIndex, getCorridorSegmentsForFloor]);
-  
+
   // Update connected corridors when a node is moved
   const updateConnectedCorridors = useCallback((nodeId: string, newPosition: Position) => {
     corridors.forEach(corridor => {
       if (corridor.from === nodeId || corridor.to === nodeId) {
         const updatedPath = [...corridor.path];
-        
+        let changed = false;
+
         if (corridor.from === nodeId) {
-          // Update first point
           updatedPath[0] = { ...newPosition, z: newPosition.z ?? canvasState.currentFloorIndex };
+          changed = true;
         }
-        
+
         if (corridor.to === nodeId) {
-          // Update last point
           updatedPath[updatedPath.length - 1] = { ...newPosition, z: newPosition.z ?? canvasState.currentFloorIndex };
+          changed = true;
         }
-        
-        updateCorridorVertex(corridor.id, 0, updatedPath[0]);
+
+        if (changed) {
+          updateCorridor(corridor.id, { path: updatedPath });
+        }
       }
     });
-  }, [corridors, updateCorridorVertex, canvasState.currentFloorIndex]);
-  
+  }, [corridors, updateCorridor, canvasState.currentFloorIndex]);
+
   // Draw functions
   const drawBackground = useCallback((ctx: CanvasRenderingContext2D) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
+
     // Save context state
     ctx.save();
-    
+
     // Apply transformations
     ctx.translate(canvasState.pan.x, canvasState.pan.y);
     ctx.scale(canvasState.scale, canvasState.scale);
-    
+
     // Draw background image if loaded
     if (backgroundImg) {
       ctx.drawImage(backgroundImg, 0, 0);
@@ -190,31 +194,31 @@ const Canvas: React.FC = () => {
       // Draw grid background
       drawGrid(ctx);
     }
-    
+
     // Draw elements
     drawElements(ctx);
-    
+
     // Restore context state
     ctx.restore();
   }, [canvasState, backgroundImg, nodes, corridors, drawingState, hoveredElement, selectedCorridor]);
-  
+
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     ctx.strokeStyle = '#e5e5e5';
     ctx.lineWidth = 1 / canvasState.scale;
-    
+
     const gridSize = 20;
     const startX = Math.floor(-canvasState.pan.x / canvasState.scale / gridSize) * gridSize;
     const startY = Math.floor(-canvasState.pan.y / canvasState.scale / gridSize) * gridSize;
     const endX = startX + (canvasRef.current!.width / canvasState.scale) + gridSize;
     const endY = startY + (canvasRef.current!.height / canvasState.scale) + gridSize;
-    
+
     for (let x = startX; x < endX; x += gridSize) {
       ctx.beginPath();
       ctx.moveTo(x, startY);
       ctx.lineTo(x, endY);
       ctx.stroke();
     }
-    
+
     for (let y = startY; y < endY; y += gridSize) {
       ctx.beginPath();
       ctx.moveTo(startX, y);
@@ -222,49 +226,49 @@ const Canvas: React.FC = () => {
       ctx.stroke();
     }
   }, [canvasState]);
-  
+
   const drawElements = useCallback((ctx: CanvasRenderingContext2D) => {
     // Draw corridors first (behind nodes)
     corridors.forEach(corridor => {
       const isHovered = hoveredElement?.id === corridor.id && hoveredElement?.type === 'corridor';
       const isSelected = selectedCorridor === corridor.id;
-      
+
       // Get segments for current floor
       const segments = getCorridorSegmentsForFloor(corridor.id, canvasState.currentFloorIndex);
-      
+
       segments.forEach(segment => {
         const renderStyle = getSegmentRenderStyle(segment, canvasState.currentFloorIndex);
-        
+
         ctx.strokeStyle = isHovered ? '#1d4ed8' : renderStyle.color;
         ctx.lineWidth = isHovered ? 5 / canvasState.scale : 3 / canvasState.scale;
         ctx.globalAlpha = renderStyle.opacity;
-        
+
         // Set line style
         if (renderStyle.isDotted) {
           ctx.setLineDash([10 / canvasState.scale, 5 / canvasState.scale]);
         } else {
           ctx.setLineDash([]);
         }
-        
+
         // Add glow effect for hovered corridors
         if (isHovered) {
           ctx.shadowColor = renderStyle.color;
           ctx.shadowBlur = 10 / canvasState.scale;
         }
-        
+
         // Draw segment
         ctx.beginPath();
         ctx.moveTo(segment.start.x, segment.start.y);
         ctx.lineTo(segment.end.x, segment.end.y);
         ctx.stroke();
-        
+
         // Reset effects
         ctx.shadowColor = 'transparent';
         ctx.shadowBlur = 0;
         ctx.setLineDash([]);
         ctx.globalAlpha = 1.0;
       });
-      
+
       // Draw corridor ID with floor info for cross-floor corridors
       if (segments.length > 0) {
         const firstSegment = segments[0];
@@ -272,45 +276,45 @@ const Canvas: React.FC = () => {
           x: (firstSegment.start.x + firstSegment.end.x) / 2,
           y: (firstSegment.start.y + firstSegment.end.y) / 2
         };
-        
+
         ctx.fillStyle = isHovered ? '#1d4ed8' : corridor.isCrossFloor ? '#8b5cf6' : '#1d4ed8';
         ctx.font = `${12 / canvasState.scale}px Arial`;
-        
+
         let label = corridor.id;
         if (corridor.isCrossFloor) {
           label += ` (F${corridor.fromFloor}→F${corridor.toFloor})`;
         }
-        
+
         ctx.fillText(label, midPoint.x + 5 / canvasState.scale, midPoint.y - 5 / canvasState.scale);
       }
-      
+
       // Draw vertex control points if selected
       if (isSelected) {
         corridor.path.forEach((point, index) => {
-          const isVertexHovered = hoveredElement?.id === corridor.id && 
-                                  hoveredElement?.type === 'vertex' && 
-                                  hoveredElement?.index === index;
-          
+          const isVertexHovered = hoveredElement?.id === corridor.id &&
+            hoveredElement?.type === 'vertex' &&
+            hoveredElement?.index === index;
+
           // Only show vertices that are on current floor or adjacent floors
           const pointFloor = point.z ?? corridor.floorIndex;
           const isRelevantVertex = Math.abs(pointFloor - canvasState.currentFloorIndex) <= 1;
-          
+
           if (isRelevantVertex) {
             ctx.fillStyle = isVertexHovered ? '#ef4444' : pointFloor === canvasState.currentFloorIndex ? '#10b981' : '#94a3b8';
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 2 / canvasState.scale;
-            
+
             ctx.beginPath();
             ctx.arc(point.x, point.y, isVertexHovered ? 8 / canvasState.scale : 6 / canvasState.scale, 0, 2 * Math.PI);
             ctx.fill();
             ctx.stroke();
-            
+
             // Draw vertex index and floor info
             ctx.fillStyle = '#ffffff';
             ctx.font = `${8 / canvasState.scale}px Arial`;
             ctx.textAlign = 'center';
             ctx.fillText((index + 1).toString(), point.x, point.y + 2 / canvasState.scale);
-            
+
             if (pointFloor !== canvasState.currentFloorIndex) {
               ctx.fillStyle = '#64748b';
               ctx.font = `${6 / canvasState.scale}px Arial`;
@@ -320,14 +324,14 @@ const Canvas: React.FC = () => {
         });
       }
     });
-    
+
     // Draw current drawing path
     if (drawingState.isDrawing && drawingState.currentPath.length > 0) {
       ctx.strokeStyle = drawingState.drawingType === 'corridor' ? '#ef4444' : '#f59e0b';
       ctx.lineWidth = 3 / canvasState.scale;
       ctx.setLineDash([5 / canvasState.scale, 5 / canvasState.scale]);
       ctx.beginPath();
-      
+
       drawingState.currentPath.forEach((point, index) => {
         if (index === 0) {
           ctx.moveTo(point.x, point.y);
@@ -335,27 +339,27 @@ const Canvas: React.FC = () => {
           ctx.lineTo(point.x, point.y);
         }
       });
-      
+
       if (drawingState.drawingType === 'zone' && drawingState.currentPath.length > 2) {
         ctx.closePath();
         ctx.fillStyle = '#f59e0b30';
         ctx.fill();
       }
-      
+
       ctx.stroke();
       ctx.setLineDash([]);
-      
+
       // Draw points with floor indicators
       drawingState.currentPath.forEach((point, index) => {
         const pointFloor = point.z ?? canvasState.currentFloorIndex;
-        const isFloorTransition = index > 0 && 
+        const isFloorTransition = index > 0 &&
           (drawingState.currentPath[index - 1].z ?? canvasState.currentFloorIndex) !== pointFloor;
-        
+
         ctx.fillStyle = isFloorTransition ? '#8b5cf6' : '#ef4444';
         ctx.beginPath();
         ctx.arc(point.x, point.y, 4 / canvasState.scale, 0, 2 * Math.PI);
         ctx.fill();
-        
+
         // Show floor number for cross-floor points
         if (pointFloor !== canvasState.currentFloorIndex) {
           ctx.fillStyle = '#8b5cf6';
@@ -365,23 +369,23 @@ const Canvas: React.FC = () => {
         }
       });
     }
-    
+
     // Draw nodes
     nodes.forEach(node => {
       const centroid = getNodeCentroid(node);
       const config = getNodeTypeConfig(node.type);
       const isHovered = hoveredElement?.id === node.id && hoveredElement?.type === 'node';
-      
+
       ctx.fillStyle = config.color;
       ctx.strokeStyle = isHovered ? '#ffffff' : '#ffffff';
       ctx.lineWidth = isHovered ? 4 / canvasState.scale : 2 / canvasState.scale;
-      
+
       // Add glow effect for hovered nodes
       if (isHovered) {
         ctx.shadowColor = config.color;
         ctx.shadowBlur = 15 / canvasState.scale;
       }
-      
+
       // Draw shape
       if (node.shape === 'polygon' && node.polygon) {
         // Draw polygon
@@ -397,7 +401,7 @@ const Canvas: React.FC = () => {
         ctx.fillStyle = config.color + '40'; // Semi-transparent
         ctx.fill();
         ctx.stroke();
-        
+
         // Draw centroid
         ctx.fillStyle = config.color;
         ctx.beginPath();
@@ -411,8 +415,8 @@ const Canvas: React.FC = () => {
         ctx.stroke();
       } else if (node.shape === 'square') {
         const size = isHovered ? 36 / canvasState.scale : 30 / canvasState.scale;
-        ctx.fillRect(centroid.x - size/2, centroid.y - size/2, size, size);
-        ctx.strokeRect(centroid.x - size/2, centroid.y - size/2, size, size);
+        ctx.fillRect(centroid.x - size / 2, centroid.y - size / 2, size, size);
+        ctx.strokeRect(centroid.x - size / 2, centroid.y - size / 2, size, size);
       } else if (node.shape === 'diamond') {
         const size = isHovered ? 18 / canvasState.scale : 15 / canvasState.scale;
         ctx.beginPath();
@@ -428,23 +432,23 @@ const Canvas: React.FC = () => {
         ctx.fill();
         ctx.stroke();
       }
-      
+
       // Reset shadow
       ctx.shadowColor = 'transparent';
       ctx.shadowBlur = 0;
-      
+
       // Draw ID with floor info
       ctx.fillStyle = '#ffffff';
       ctx.font = `bold ${10 / canvasState.scale}px Arial`;
       ctx.textAlign = 'center';
-      
+
       let nodeLabel = node.id;
       if (node.floorIndex !== canvasState.currentFloorIndex) {
         nodeLabel += ` (F${node.floorIndex})`;
       }
-      
+
       ctx.fillText(nodeLabel, centroid.x, centroid.y + 3 / canvasState.scale);
-      
+
       // Highlight if near for snapping
       if (drawingState.isDrawing && drawingState.drawingType === 'corridor') {
         const lastPoint = drawingState.currentPath[drawingState.currentPath.length - 1];
@@ -458,7 +462,7 @@ const Canvas: React.FC = () => {
       }
     });
   }, [canvasState, nodes, corridors, drawingState, getNodeCentroid, isNearNode, getNodeTypeConfig, hoveredElement, selectedCorridor, getCorridorSegmentsForFloor]);
-  
+
   const drawStar = (ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, points: number) => {
     const angle = Math.PI / points;
     ctx.beginPath();
@@ -472,12 +476,13 @@ const Canvas: React.FC = () => {
     }
     ctx.closePath();
   };
-  
+
   // Event handlers
   const handleMouseDown = (event: React.MouseEvent) => {
+    if (event.button !== 0) return;
     const mousePos = getMousePos(event);
     const canvasPos = screenToCanvas(mousePos);
-    
+
     if (selectedTool === 'pan') {
       // Pan mode - always pan
       setIsDragging(true);
@@ -495,7 +500,7 @@ const Canvas: React.FC = () => {
       } else {
         const element = getElementByPosition(canvasPos);
         const corridorId = isNearCorridorSegment(canvasPos, 15);
-        
+
         if (element && element.type === 'node') {
           setDragTarget(element.id);
           setDragType('node');
@@ -515,7 +520,7 @@ const Canvas: React.FC = () => {
       setLastMousePos(mousePos);
     } else if (selectedTool === 'draw') {
       const config = getNodeTypeConfig(selectedNodeType);
-      
+
       if (selectedNodeType === 'Connecting Segment (CS)') {
         // Corridor drawing mode
         if (!drawingState.isDrawing) {
@@ -556,10 +561,10 @@ const Canvas: React.FC = () => {
             // Check if clicking near start point to close
             const startPoint = drawingState.currentPath[0];
             const distance = Math.sqrt(
-              Math.pow(canvasPos.x - startPoint.x, 2) + 
+              Math.pow(canvasPos.x - startPoint.x, 2) +
               Math.pow(canvasPos.y - startPoint.y, 2)
             );
-            
+
             if (distance < 20 && drawingState.currentPath.length >= 3) {
               finishDrawing();
             } else {
@@ -570,25 +575,25 @@ const Canvas: React.FC = () => {
       }
     }
   };
-  
+
   const handleMouseMove = (event: React.MouseEvent) => {
     const mousePos = getMousePos(event);
     const canvasPos = screenToCanvas(mousePos);
-    
+
     // Update hover state for select mode
     if (selectedTool === 'select' && !isDragging) {
       // Check for vertex hover first (highest priority)
       const vertexHit = isNearCorridorVertex(canvasPos, 12);
       if (vertexHit) {
-        setHoveredElement({ 
-          id: vertexHit.corridorId, 
-          type: 'vertex', 
-          index: vertexHit.vertexIndex 
+        setHoveredElement({
+          id: vertexHit.corridorId,
+          type: 'vertex',
+          index: vertexHit.vertexIndex
         });
       } else {
         const nodeElement = getElementByPosition(canvasPos, 20);
         const corridorId = isNearCorridorSegment(canvasPos, 15);
-        
+
         if (nodeElement) {
           setHoveredElement(nodeElement);
         } else if (corridorId) {
@@ -598,7 +603,7 @@ const Canvas: React.FC = () => {
         }
       }
     }
-    
+
     if (isDragging && selectedTool === 'select') {
       if (dragTarget && dragType === 'node') {
         // Move node and update connected corridors
@@ -631,29 +636,38 @@ const Canvas: React.FC = () => {
       });
       setLastMousePos(mousePos);
     }
-    
+
     // Update snap target for corridor drawing
     if (drawingState.isDrawing && drawingState.drawingType === 'corridor') {
       const nearNodeId = isNearNode(canvasPos, 30);
       setDrawingState({ snapTarget: nearNodeId });
     }
   };
-  
+
   const handleMouseUp = () => {
     setIsDragging(false);
     setDragTarget(null);
     setDragType(null);
     setDragVertexIndex(-1);
   };
-  
+
+  const handleContextMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    if (drawingState.isDrawing) {
+      if (drawingState.drawingType === 'corridor' || drawingState.drawingType === 'zone') {
+        finishDrawing();
+      }
+    }
+  };
+
   const handleDoubleClick = (event: React.MouseEvent) => {
     const mousePos = getMousePos(event);
     const canvasPos = screenToCanvas(mousePos);
-    
+
     if (selectedTool === 'select') {
       const element = getElementByPosition(canvasPos);
       const corridorId = isNearCorridorSegment(canvasPos, 15);
-      
+
       if (element && element.type === 'node') {
         const node = nodes.find(n => n.id === element.id);
         if (node) openNodeModal(node);
@@ -665,7 +679,7 @@ const Canvas: React.FC = () => {
       finishDrawing();
     }
   };
-  
+
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (event.key === 'Escape') {
       if (drawingState.isDrawing) {
@@ -675,47 +689,47 @@ const Canvas: React.FC = () => {
       }
     }
   }, [drawingState.isDrawing, selectedCorridor, cancelDrawing]);
-  
+
   const handleWheel = (event: React.WheelEvent) => {
     event.preventDefault();
     const mousePos = getMousePos(event);
     const canvasPos = screenToCanvas(mousePos);
-    
+
     const scaleFactor = event.deltaY > 0 ? 0.9 : 1.1;
     const newScale = Math.max(0.1, Math.min(3, canvasState.scale * scaleFactor));
-    
+
     // Zoom towards mouse position
     const newPan = {
       x: mousePos.x - canvasPos.x * newScale,
       y: mousePos.y - canvasPos.y * newScale
     };
-    
+
     setCanvasState({
       scale: newScale,
       pan: newPan
     });
   };
-  
+
   // Effects
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    
+
     // Set canvas size
     canvas.width = canvas.offsetWidth;
     canvas.height = canvas.offsetHeight;
-    
+
     drawBackground(ctx);
   }, [drawBackground]);
-  
+
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
-  
+
   // Dynamic cursor based on mode and hover state
   const getCursorStyle = () => {
     if (selectedTool === 'pan') {
@@ -731,7 +745,7 @@ const Canvas: React.FC = () => {
     }
     return 'crosshair';
   };
-  
+
   const getInstructions = () => {
     if (drawingState.isDrawing) {
       if (drawingState.drawingType === 'corridor') {
@@ -740,7 +754,7 @@ const Canvas: React.FC = () => {
         return 'Click to add points • Click start point to close • ESC to cancel';
       }
     }
-    
+
     switch (selectedTool) {
       case 'pan':
         return 'Drag to pan the view • Scroll to zoom • Switch to Select or Draw mode to edit elements';
@@ -765,9 +779,9 @@ const Canvas: React.FC = () => {
         return 'Select a tool to begin';
     }
   };
-  
+
   const currentFloor = getCurrentFloor();
-  
+
   return (
     <div className="relative w-full h-full">
       <canvas
@@ -779,14 +793,15 @@ const Canvas: React.FC = () => {
         onMouseUp={handleMouseUp}
         onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
+        onContextMenu={handleContextMenu}
       />
-      
+
       {/* Instructions */}
       <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 shadow-lg max-w-md">
         <div className="text-sm text-gray-700">
           <div className="font-semibold mb-2 flex items-center gap-2">
-            {selectedTool === 'select' ? 'Select Mode' : 
-             selectedTool === 'draw' ? `Draw Mode: ${selectedNodeType}` : 'Tool Mode'}
+            {selectedTool === 'select' ? 'Select Mode' :
+              selectedTool === 'draw' ? `Draw Mode: ${selectedNodeType}` : 'Tool Mode'}
             {currentFloor && (
               <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
                 {currentFloor.name}
@@ -808,7 +823,7 @@ const Canvas: React.FC = () => {
           )}
           {hoveredElement && selectedTool === 'select' && (
             <div className="text-xs text-green-600 mt-1">
-              {hoveredElement.type === 'vertex' ? 
+              {hoveredElement.type === 'vertex' ?
                 `Vertex ${(hoveredElement.index || 0) + 1} of ${hoveredElement.id} - Drag to move` :
                 `Hover: ${hoveredElement.id} (${hoveredElement.type}) - Click to edit`
               }
@@ -821,7 +836,7 @@ const Canvas: React.FC = () => {
           )}
         </div>
       </div>
-      
+
       {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm rounded-lg p-2 shadow-lg">
         <div className="text-xs text-gray-600">

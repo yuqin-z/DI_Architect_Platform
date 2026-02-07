@@ -1,64 +1,60 @@
 import React from 'react';
 import { useAnnotationStore } from '../store/annotationStore';
 import { Trash2, Edit, GripVertical } from 'lucide-react';
-import { PathSequenceItem } from '../types';
 
 const AttributePanel: React.FC = () => {
   const {
     nodes,
     corridors,
-    edges,
     pathSequence,
     deleteNode,
     deleteCorridor,
-    deleteEdge,
     openNodeModal,
     openCorridorModal,
-    openEdgeModal,
     updatePathSequence
   } = useAnnotationStore();
-  
+
   const generateSequenceDisplay = () => {
     if (pathSequence.length === 0) return 'No path defined';
-    
+
     const sortedSequence = [...pathSequence].sort((a, b) => a.order - b.order);
     return sortedSequence.map(item => item.id).join(' → ');
   };
-  
+
   const handleDragStart = (e: React.DragEvent, index: number) => {
     e.dataTransfer.setData('text/plain', index.toString());
   };
-  
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
-  
+
   const handleDrop = (e: React.DragEvent, dropIndex: number) => {
     e.preventDefault();
     const dragIndex = parseInt(e.dataTransfer.getData('text/plain'));
-    
+
     if (dragIndex === dropIndex) return;
-    
+
     const newSequence = [...pathSequence];
     const [draggedItem] = newSequence.splice(dragIndex, 1);
     newSequence.splice(dropIndex, 0, draggedItem);
-    
+
     // Update order values
     const updatedSequence = newSequence.map((item, index) => ({
       ...item,
       order: index
     }));
-    
+
     updatePathSequence(updatedSequence);
   };
-  
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-gray-200">
         <h2 className="text-lg font-semibold text-gray-800">Path Annotations</h2>
       </div>
-      
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {/* Path Sequence */}
@@ -69,7 +65,7 @@ const AttributePanel: React.FC = () => {
               {generateSequenceDisplay()}
             </div>
           </div>
-          
+
           {/* Draggable sequence items */}
           <div className="space-y-1">
             {pathSequence
@@ -91,7 +87,7 @@ const AttributePanel: React.FC = () => {
                   </span>
                 </div>
               ))}
-            
+
             {pathSequence.length === 0 && (
               <div className="text-sm text-gray-500 italic text-center py-4">
                 No path sequence defined yet
@@ -99,62 +95,7 @@ const AttributePanel: React.FC = () => {
             )}
           </div>
         </div>
-        
-        {/* Auto-Generated Edges */}
-        <div>
-          <h3 className="font-medium text-gray-700 mb-2">
-            Decision Edges ({edges.length})
-          </h3>
-          <div className="text-xs text-gray-500 mb-3">
-            Automatically generated from path sequence
-          </div>
-          <div className="space-y-2">
-            {edges.map(edge => (
-              <div
-                key={edge.id}
-                className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 hover:bg-yellow-100 transition-colors"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="font-medium text-sm text-gray-800">
-                      {edge.from} → {edge.to}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      Where: {edge.design_intent.where || 'Not specified'}
-                    </div>
-                    {edge.design_intent.design_cues?.cue_medium_how && edge.design_intent.design_cues.cue_medium_how.length > 0 && (
-                      <div className="text-xs text-green-600 mt-1">
-                        How: {edge.design_intent.design_cues.cue_medium_how.join(', ')}
-                      </div>
-                    )}
-                    {edge.design_intent.design_cues?.explanation && (
-                      <div className="text-xs text-purple-600 mt-1">
-                        Explanation: {edge.design_intent.design_cues.explanation.substring(0, 50)}
-                        {edge.design_intent.design_cues.explanation.length > 50 ? '...' : ''}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => openEdgeModal(edge)}
-                      className="p-1 text-blue-500 hover:bg-blue-100 rounded"
-                      title="Edit Design Intent"
-                    >
-                      <Edit size={14} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-            
-            {edges.length === 0 && (
-              <div className="text-sm text-gray-500 italic text-center py-4">
-                No decision edges generated yet
-              </div>
-            )}
-          </div>
-        </div>
-        
+
         {/* Nodes */}
         <div>
           <h3 className="font-medium text-gray-700 mb-2">
@@ -201,9 +142,9 @@ const AttributePanel: React.FC = () => {
                     </button>
                   </div>
                 </div>
-                
+
                 {/* Show some attributes */}
-                {node.behavior_expectation.behavior.length > 0 && (
+                {node.behavior_expectation?.behavior && node.behavior_expectation.behavior.length > 0 && (
                   <div className="mt-2 text-xs">
                     <span className="text-gray-500">Behaviors: </span>
                     <span className="text-purple-600">
@@ -211,8 +152,8 @@ const AttributePanel: React.FC = () => {
                     </span>
                   </div>
                 )}
-                
-                {node.behavior_expectation.attention_zones.length > 0 && (
+
+                {node.behavior_expectation?.attention_zones && node.behavior_expectation.attention_zones.length > 0 && (
                   <div className="mt-1 text-xs">
                     <span className="text-gray-500">Attention zones: </span>
                     <span className="text-blue-600">
@@ -222,7 +163,7 @@ const AttributePanel: React.FC = () => {
                 )}
               </div>
             ))}
-            
+
             {nodes.length === 0 && (
               <div className="text-sm text-gray-500 italic text-center py-4">
                 No nodes created yet
@@ -230,7 +171,7 @@ const AttributePanel: React.FC = () => {
             )}
           </div>
         </div>
-        
+
         {/* Connecting Segments */}
         <div>
           <h3 className="font-medium text-gray-700 mb-2">
@@ -253,6 +194,12 @@ const AttributePanel: React.FC = () => {
                     {corridor.from && corridor.to && (
                       <div className="text-xs text-blue-600 mt-1">
                         {corridor.from} → {corridor.to}
+                      </div>
+                    )}
+                    {corridor.notes && (
+                      <div className="text-xs text-purple-600 mt-1 italic">
+                        Notes: {corridor.notes.substring(0, 50)}
+                        {corridor.notes.length > 50 ? '...' : ''}
                       </div>
                     )}
                     {corridor.width && corridor.height && (
@@ -280,7 +227,7 @@ const AttributePanel: React.FC = () => {
                 </div>
               </div>
             ))}
-            
+
             {corridors.length === 0 && (
               <div className="text-sm text-gray-500 italic text-center py-4">
                 No connecting segments created yet
